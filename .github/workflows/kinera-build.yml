@@ -19,9 +19,27 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-            - name: Install Android SDK
+      - name: Verify or install Android SDK
+        shell: bash
         run: |
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          if [[ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" || ! -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" || ! -x "$ANDROID_HOME/build-tools/35.0.0/aapt" ]]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+            if [[ ! -x "$SDKMANAGER" ]]; then SDKMANAGER="$(command -v sdkmanager || true)"; fi
+            if [[ -z "$SDKMANAGER" || ! -x "$SDKMANAGER" ]]; then
+              SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+            fi
+            test -x "$SDKMANAGER"
+            "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/35.0.0/aapt"
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
       - name: Restore exact Android source
@@ -419,7 +437,7 @@ jobs:
             echo 'kind=test-signed' >> "$GITHUB_OUTPUT"
           fi
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | sed -n '1,8p'
           cp "$APK" "$GITHUB_WORKSPACE/dist/$NAME"
           cd "$GITHUB_WORKSPACE/dist"
           sha256sum "$NAME" > SHA256SUMS.txt
