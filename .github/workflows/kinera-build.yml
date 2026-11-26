@@ -1,7 +1,7 @@
-# Kinera Edit v8.1.0: small workflow; source archive committed separately.
+# Kinera Edit v0.5.4 Stable: small workflow; source archive committed separately.
 # No third-party service credentials or signing keys are embedded.
 # A persistent signing secret is required; the expected certificate is pinned.
-name: Kinera Edit Android APK v8.1
+name: Kinera Edit Android APK v0.5.4-Stable
 on:
   workflow_dispatch:
   push:
@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V81' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
+          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V054_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           SOURCE="$GITHUB_WORKSPACE/kinera-source.zip"
           test -f "$SOURCE" || { echo '::error::Upload kinera-source.zip to the repository root before running this workflow.'; exit 1; }
-          printf '%s  %s\n' 'b5e859b8981770c4884058ba0834d14994f3fc40554b56243b09ec94c5571f3c' "$SOURCE" | sha256sum -c -
+          printf '%s  %s\n' '1a79a4313dc5fbac1ed0def9cd3b6e40bef2161fee595843ea86d16517b74dfa' "$SOURCE" | sha256sum -c -
           unzip -tq "$SOURCE"
           mkdir -p "$RUNNER_TEMP/kinera-src"
           unzip -q "$SOURCE" -d "$RUNNER_TEMP/kinera-src"
@@ -92,7 +92,7 @@ jobs:
           unset SIGNING_BUNDLE KEYSTORE_BASE64
           gradle --no-daemon --stacktrace :app:assembleRelease :app:lintRelease
           APK=app/build/outputs/apk/release/app-release.apk
-          NAME=Kinera_Edit_v8.1.0_release.apk
+          NAME=Kinera_Edit_v0.5.4_Stable_release.apk
           EXPECTED_CERT=47dc21b24c06909c980423fddc2f796269ecf43890de113e0753a6a3eae53e26
           CERT_OUTPUT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERT_OUTPUT"
@@ -103,7 +103,7 @@ jobs:
           fi
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
           printf '%s\n' "$BADGING" | sed -n '1,8p'
-          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='72' versionName='8.1.0'" > /dev/null
+          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='90' versionName='0.5.4 Stable'" > /dev/null
           printf '%s\n' "$BADGING" | grep -qxF "sdkVersion:'31'"
           if printf '%s\n' "$BADGING" | grep -q '^application-debuggable'; then
             echo '::error::Release APK must not be debuggable.'
@@ -115,22 +115,20 @@ jobs:
           python3 tests/apk_single_audit.py "$GITHUB_WORKSPACE/dist/$NAME" "$GITHUB_WORKSPACE/dist/APK_SIZE_REPORT.json"
           cd "$GITHUB_WORKSPACE/dist"
           sha256sum "$NAME" APK_SIZE_REPORT.json > SHA256SUMS.txt
-          zip -q Kinera_Edit_v8.1.0_release.zip "$NAME" SHA256SUMS.txt APK_SIZE_REPORT.json
-          test -s Kinera_Edit_v8.1.0_release.zip
           echo 'kind=release-signed' >> "$GITHUB_OUTPUT"
       - name: Upload lint diagnostics when available
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-v8.1-lint-diagnostics
+          name: Kinera-v0.5.4-Stable-lint-diagnostics
           path: ${{ runner.temp }}/kinera-src/app/build/reports/lint-results-*
           if-no-files-found: ignore
       - name: Upload compiled APK artifact
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-Edit-v8.1-APK
-          path: dist/*
+          name: Kinera-Edit-v0.5.4-Stable-APK
+          path: dist/Kinera_Edit_v0.5.4_Stable_release.apk
           if-no-files-found: error
       - name: Publish direct APK download as prerelease
         id: publish
@@ -140,10 +138,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v8.1.0-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v8.1.0 ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. Retired neural audio is removed from the app; private importer files are cleaned at startup. Permanent signer verified. Keep signing secret backed up. No Creator Rewards eligibility guarantee."
+          TAG="v0.5.4-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" dist/Kinera_Edit_v0.5.4_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.5.4 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
           ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for asset in Kinera_Edit_v8.1.0_release.apk Kinera_Edit_v8.1.0_release.zip SHA256SUMS.txt APK_SIZE_REPORT.json; do
+          for asset in Kinera_Edit_v0.5.4_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
             printf '%s\n' "$ASSETS" | grep -qxF "$asset" || { echo "::error::Missing release asset: $asset"; exit 1; }
           done
       - name: Verify build and delivery completed
@@ -158,8 +156,7 @@ jobs:
           test "$COMPILE_RESULT" = success
           test "$UPLOAD_RESULT" = success
           test "$PUBLISH_RESULT" = success
-          test -s dist/Kinera_Edit_v8.1.0_release.apk
+          test -s dist/Kinera_Edit_v0.5.4_Stable_release.apk
           test -s dist/APK_SIZE_REPORT.json
-          test -s dist/Kinera_Edit_v8.1.0_release.zip
           (cd dist && sha256sum -c SHA256SUMS.txt)
-# KINERA_WORKFLOW_COMPLETE_V81
+# KINERA_WORKFLOW_COMPLETE_V054_STABLE
