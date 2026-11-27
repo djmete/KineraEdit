@@ -1,7 +1,7 @@
-# Kinera Edit v0.7.4 Stable: small workflow; source archive committed separately.
+# Kinera Edit v0.9.1 Stable: small workflow; source archive committed separately.
 # No third-party service credentials or signing keys are embedded.
 # A persistent signing secret is required; the expected certificate is pinned.
-name: Kinera Edit Android APK v0.7.4-Stable
+name: Kinera Edit Android APK v0.9.1-Stable
 on:
   workflow_dispatch:
   push:
@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V074_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
+          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V091_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -65,7 +65,7 @@ jobs:
           set -euo pipefail
           SOURCE="$GITHUB_WORKSPACE/kinera-source.zip"
           test -f "$SOURCE" || { echo '::error::Upload kinera-source.zip to the repository root before running this workflow.'; exit 1; }
-          printf '%s  %s\n' '37bbf757c2a1c8bee3652f4f5fef03a232235ce6e4ba7d3a878234fcc2dc072e' "$SOURCE" | sha256sum -c -
+          printf '%s  %s\n' 'f8e468711514105b6c68f35d34a4c1c73c758a1635806c4e462c01a2ae5bafd0' "$SOURCE" | sha256sum -c -
           unzip -tq "$SOURCE"
           mkdir -p "$RUNNER_TEMP/kinera-src"
           unzip -q "$SOURCE" -d "$RUNNER_TEMP/kinera-src"
@@ -145,7 +145,7 @@ jobs:
           "$TOOLS/zipalign" -f -P 16 4 "$UNSIGNED" "$RUNNER_TEMP/kinera-aligned.apk"
           APK="$RUNNER_TEMP/kinera-signed.apk"
           "$TOOLS/apksigner" sign --ks "$KINERA_KEYSTORE" --ks-type PKCS12 --ks-key-alias kinera --ks-pass env:KINERA_STORE_PASSWORD --key-pass env:KINERA_KEY_PASSWORD --out "$APK" "$RUNNER_TEMP/kinera-aligned.apk"
-          NAME=Kinera_Edit_v0.7.4_Stable_release.apk
+          NAME=Kinera_Edit_v0.9.1_Stable_release.apk
           EXPECTED_CERT=47dc21b24c06909c980423fddc2f796269ecf43890de113e0753a6a3eae53e26
           CERT_OUTPUT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERT_OUTPUT"
@@ -156,7 +156,7 @@ jobs:
           fi
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
           printf '%s\n' "$BADGING" | sed -n '1,8p'
-          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='110' versionName='0.7.4 Stable'" > /dev/null
+          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='127' versionName='0.9.1 Stable'" > /dev/null
           printf '%s\n' "$BADGING" | grep -qxF "sdkVersion:'31'"
           if printf '%s\n' "$BADGING" | grep -q '^application-debuggable'; then
             echo '::error::Release APK must not be debuggable.'
@@ -173,9 +173,9 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-Edit-v0.7.4-Stable-APK
+          name: Kinera-Edit-v0.9.1-Stable-APK
           path: |
-            dist/Kinera_Edit_v0.7.4_Stable_release.apk
+            dist/Kinera_Edit_v0.9.1_Stable_release.apk
             dist/APK_SIZE_REPORT.json
             dist/SHA256SUMS.txt
           if-no-files-found: error
@@ -218,7 +218,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-v0.7.4-build-diagnostics
+          name: Kinera-v0.9.1-build-diagnostics
           path: |
             diagnostics/
             ${{ runner.temp }}/kinera-src/app/build/reports/lint-results-*
@@ -231,10 +231,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.7.4-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          gh release create "$TAG" dist/Kinera_Edit_v0.7.4_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.7.4 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
+          TAG="v0.9.1-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" dist/Kinera_Edit_v0.9.1_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.9.1 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
           ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for asset in Kinera_Edit_v0.7.4_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
+          for asset in Kinera_Edit_v0.9.1_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
             printf '%s\n' "$ASSETS" | grep -qxF "$asset" || { echo "::error::Missing release asset: $asset"; exit 1; }
           done
       - name: Verify build and delivery completed
@@ -251,7 +251,7 @@ jobs:
           test "$UPLOAD_RESULT" = success
           test "$LINT_RESULT" = success
           test "$PUBLISH_RESULT" = success
-          test -s dist/Kinera_Edit_v0.7.4_Stable_release.apk
+          test -s dist/Kinera_Edit_v0.9.1_Stable_release.apk
           test -s dist/APK_SIZE_REPORT.json
           (cd dist && sha256sum -c SHA256SUMS.txt)
-# KINERA_WORKFLOW_COMPLETE_V074_STABLE
+# KINERA_WORKFLOW_COMPLETE_V091_STABLE
