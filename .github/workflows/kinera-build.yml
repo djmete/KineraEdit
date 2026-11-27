@@ -1,7 +1,7 @@
-# Kinera Edit v0.9.3 Stable: small workflow; source archive committed separately.
+# Kinera Edit v1.0.6 RC: small workflow; source archive committed separately.
 # No third-party service credentials or signing keys are embedded.
 # A persistent signing secret is required; the expected certificate is pinned.
-name: Kinera Edit Android APK v0.9.3-Stable
+name: Kinera Edit Android APK v1.0.6-RC
 on:
   workflow_dispatch:
   push:
@@ -30,7 +30,7 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/diagnostics"
           exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/workflow.log") 2>&1
           trap 'rc=$?; echo "Stage workflow exit code: $rc"; exit "$rc"' EXIT
-          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V093_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
+          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V106_RC' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
       - uses: actions/setup-java@v4
         id: java_setup
         with:
@@ -83,11 +83,11 @@ jobs:
           trap 'rc=$?; echo "Stage archive exit code: $rc"; exit "$rc"' EXIT
           SOURCE="$GITHUB_WORKSPACE/kinera-source.zip"
           test -f "$SOURCE" || { echo '::error::Upload kinera-source.zip to the repository root before running this workflow.'; exit 1; }
-          EXPECTED='23fa706f9b4b0f6fbe8694db311d9b3837fa993224569e5d26f622520406f4b8'
+          EXPECTED='d8e7e137fcb3a5e68786743bdbcdb13c69424763db9c8900c98602bfaa2075e9'
           ACTUAL=$(sha256sum "$SOURCE" | cut -d' ' -f1)
           echo "Expected SHA-256: $EXPECTED"
           echo "Actual SHA-256:   $ACTUAL"
-          if [[ "$ACTUAL" != "$EXPECTED" ]]; then echo '::error::Source/workflow mismatch. Upload both files from the same v0.9.3 package.'; exit 1; fi
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then echo '::error::Source/workflow mismatch. Upload both files from the same v1.0.6 package.'; exit 1; fi
           unzip -tq "$SOURCE"
           mkdir -p "$RUNNER_TEMP/kinera-src"
           unzip -q "$SOURCE" -d "$RUNNER_TEMP/kinera-src"
@@ -127,7 +127,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-v0.9.3-unsigned-diagnostic
+          name: Kinera-v1.0.6-unsigned-diagnostic
           path: ${{ runner.temp }}/kinera-src/app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
           retention-days: 7
@@ -163,7 +163,7 @@ jobs:
           "$TOOLS/zipalign" -f -P 16 4 "$UNSIGNED" "$RUNNER_TEMP/kinera-aligned.apk"
           APK="$RUNNER_TEMP/kinera-signed.apk"
           "$TOOLS/apksigner" sign --ks "$KINERA_KEYSTORE" --ks-type PKCS12 --ks-key-alias kinera --ks-pass env:KINERA_STORE_PASSWORD --key-pass env:KINERA_KEY_PASSWORD --out "$APK" "$RUNNER_TEMP/kinera-aligned.apk"
-          NAME=Kinera_Edit_v0.9.3_Stable_release.apk
+          NAME=Kinera_Edit_v1.0.6_RC_release.apk
           EXPECTED_CERT=47dc21b24c06909c980423fddc2f796269ecf43890de113e0753a6a3eae53e26
           CERT_OUTPUT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERT_OUTPUT"
@@ -174,7 +174,7 @@ jobs:
           fi
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
           printf '%s\n' "$BADGING" | sed -n '1,8p'
-          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='129' versionName='0.9.3 Stable'" > /dev/null
+          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='142' versionName='1.0.6 RC'" > /dev/null
           printf '%s\n' "$BADGING" | grep -qxF "sdkVersion:'31'"
           if printf '%s\n' "$BADGING" | grep -q '^application-debuggable'; then
             echo '::error::Release APK must not be debuggable.'
@@ -191,9 +191,9 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-Edit-v0.9.3-Stable-APK
+          name: Kinera-Edit-v1.0.6-RC-APK
           path: |
-            dist/Kinera_Edit_v0.9.3_Stable_release.apk
+            dist/Kinera_Edit_v1.0.6_RC_release.apk
             dist/APK_SIZE_REPORT.json
             dist/SHA256SUMS.txt
           if-no-files-found: error
@@ -215,10 +215,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/diagnostics"
           exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/publish.log") 2>&1
           trap 'rc=$?; echo "Stage publish exit code: $rc"; exit "$rc"' EXIT
-          TAG="v0.9.3-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          gh release create "$TAG" dist/Kinera_Edit_v0.9.3_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.9.3 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
+          TAG="v1.0.6-RC-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" dist/Kinera_Edit_v1.0.6_RC_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v1.0.6 RC ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
           ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for asset in Kinera_Edit_v0.9.3_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
+          for asset in Kinera_Edit_v1.0.6_RC_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
             printf '%s\n' "$ASSETS" | grep -qxF "$asset" || { echo "::error::Missing release asset: $asset"; exit 1; }
           done
       - name: Verify build and delivery completed
@@ -236,7 +236,7 @@ jobs:
           test "$UPLOAD_RESULT" = success
           test "$LINT_RESULT" = success
           test "$PUBLISH_RESULT" = success
-          test -s dist/Kinera_Edit_v0.9.3_Stable_release.apk
+          test -s dist/Kinera_Edit_v1.0.6_RC_release.apk
           test -s dist/APK_SIZE_REPORT.json
           (cd dist && sha256sum -c SHA256SUMS.txt)
       - name: Report every stage and preserve diagnostic tail
@@ -249,18 +249,28 @@ jobs:
           set -euo pipefail
           mkdir -p diagnostics
           python3 - <<'PYCODE'
+          #!/usr/bin/env python3
           import json,os,pathlib,re,sys
           root=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'diagnostics');root.mkdir(parents=True,exist_ok=True)
           try: outcomes=json.loads(os.environ.get('KINERA_STEP_OUTCOMES','{}'))
           except json.JSONDecodeError: outcomes={}
           lines=['KINERA CI stage outcomes:']+[f'{k}: {v}' for k,v in outcomes.items()]
           failed=[k for k,v in outcomes.items() if v in ('failure','cancelled')]
-          lines+=['Failed stage(s): '+(', '.join(failed) or 'No failing step reported; inspect workflow initialization or post-job cleanup.')]
+          required=('assemble','apk','upload','lint','publish','delivery')
+          complete=all(outcomes.get(k)=='success' for k in required) and not failed
+          lines+=['Result: '+('APK built, signed, verified and delivered.' if complete else 'Failed or incomplete delivery.')]
+          lines+=['Failed stage(s): '+(', '.join(failed) if failed else 'None — delivery succeeded.' if complete else 'None reported; check skipped steps or initialization.')]
           pattern=re.compile(r'error:|error |exception|failed|failure|could not|missing|mismatch|not found|denied|timed out|HTTP [45]\d\d',re.I)
           for p in sorted(root.glob('*.log')):
            data=p.read_text(errors='replace').splitlines();hits=[x for x in data if pattern.search(x)]
-           lines += [f'\n[{p.name}] matching lines:',*hits[-35:], 'Last log lines:',*data[-35:]]
+           attempts=[x for x in data if x.startswith('KINERA_GRADLE_ATTEMPT ')]
+           recovered=bool(attempts and attempts[-1].endswith('exit=0') and any(not x.endswith('exit=0') for x in attempts[:-1]))
+           lines += [f'\n[{p.name}]',*attempts]
+           if recovered: lines += ['Recovered attempt(s): cache/network retry succeeded; earlier failure lines are historical, not a final error.']
+           if not complete and not recovered: lines += ['Matching lines:',*hits[-35:]]
+           lines += ['Last log lines:',*data[-25:]]
           report='\n'.join(lines)+'\n';(root/'FIRST_ERROR.txt').write_text(report)
+          (root/'CI_STATUS.json').write_text(json.dumps({'delivery_success':complete,'failed_stages':failed,'outcomes':outcomes},indent=2)+'\n')
           print(report[-18000:]);summary=os.environ.get('GITHUB_STEP_SUMMARY')
           if summary:
            with open(summary,'a') as f:f.write('### Kinera CI diagnostics\n```text\n'+report[-18000:]+'\n```\n')
@@ -269,9 +279,9 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-v0.9.3-build-diagnostics
+          name: Kinera-v1.0.6-build-diagnostics
           path: |
             diagnostics/
             ${{ runner.temp }}/kinera-src/app/build/reports/lint-results-*
           if-no-files-found: warn
-# KINERA_WORKFLOW_COMPLETE_V093_STABLE
+# KINERA_WORKFLOW_COMPLETE_V106_RC
