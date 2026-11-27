@@ -1,7 +1,7 @@
-# Kinera Edit v0.9.1 Stable: small workflow; source archive committed separately.
+# Kinera Edit v0.9.3 Stable: small workflow; source archive committed separately.
 # No third-party service credentials or signing keys are embedded.
 # A persistent signing secret is required; the expected certificate is pinned.
-name: Kinera Edit Android APK v0.9.1-Stable
+name: Kinera Edit Android APK v0.9.3-Stable
 on:
   workflow_dispatch:
   push:
@@ -18,19 +18,32 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        id: checkout
+      - name: Initialize diagnostics
+        id: init
+        run: mkdir -p diagnostics
       - name: Reject incomplete workflow copies
+        id: workflow_check
         shell: bash
         run: |
           set -euo pipefail
-          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V091_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/workflow.log") 2>&1
+          trap 'rc=$?; echo "Stage workflow exit code: $rc"; exit "$rc"' EXIT
+          grep -qxF '# KINERA_WORKFLOW_COMPLETE_V093_STABLE' .github/workflows/kinera-build.yml || { echo '::error::Incomplete workflow. Copy the full file including its final marker.'; exit 1; }
       - uses: actions/setup-java@v4
+        id: java_setup
         with:
           distribution: temurin
           java-version: '17'
       - name: Verify or install Android SDK
+        id: sdk
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/sdk.log") 2>&1
+          trap 'rc=$?; echo "Stage sdk exit code: $rc"; exit "$rc"' EXIT
           export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
@@ -57,15 +70,24 @@ jobs:
           test -x "$ANDROID_HOME/build-tools/35.0.0/aapt"
           test -x "$ANDROID_HOME/build-tools/35.0.0/zipalign"
       - uses: gradle/actions/setup-gradle@v4
+        id: gradle_setup
         with:
           gradle-version: '8.9'
       - name: Verify and restore exact Android source
+        id: archive
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/archive.log") 2>&1
+          trap 'rc=$?; echo "Stage archive exit code: $rc"; exit "$rc"' EXIT
           SOURCE="$GITHUB_WORKSPACE/kinera-source.zip"
           test -f "$SOURCE" || { echo '::error::Upload kinera-source.zip to the repository root before running this workflow.'; exit 1; }
-          printf '%s  %s\n' 'f8e468711514105b6c68f35d34a4c1c73c758a1635806c4e462c01a2ae5bafd0' "$SOURCE" | sha256sum -c -
+          EXPECTED='23fa706f9b4b0f6fbe8694db311d9b3837fa993224569e5d26f622520406f4b8'
+          ACTUAL=$(sha256sum "$SOURCE" | cut -d' ' -f1)
+          echo "Expected SHA-256: $EXPECTED"
+          echo "Actual SHA-256:   $ACTUAL"
+          if [[ "$ACTUAL" != "$EXPECTED" ]]; then echo '::error::Source/workflow mismatch. Upload both files from the same v0.9.3 package.'; exit 1; fi
           unzip -tq "$SOURCE"
           mkdir -p "$RUNNER_TEMP/kinera-src"
           unzip -q "$SOURCE" -d "$RUNNER_TEMP/kinera-src"
@@ -88,34 +110,27 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/diagnostics"
           cd "$RUNNER_TEMP/kinera-src"
           bash tests/maven_preflight.sh 2>&1 | tee "$GITHUB_WORKSPACE/diagnostics/maven-network.log"
-      - name: Resolve Android plugin classpath before compiling
-        id: classpath
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/kinera-src"
-          bash tests/gradle_ci.sh "$GITHUB_WORKSPACE/diagnostics/classpath.log" help
-      - name: Android dependency, resource and Java compiler preflight
-        id: preflight
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/kinera-src"
-          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
-          for stage in checkReleaseAarMetadata processReleaseResources compileReleaseJavaWithJavac; do
-            echo "::group::Gradle :app:$stage"
-            bash tests/gradle_ci.sh "$GITHUB_WORKSPACE/diagnostics/$stage.log" ":app:$stage"
-            echo '::endgroup::'
-          done
       - name: Assemble unsigned universal release APK
         id: assemble
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/assemble-stage.log") 2>&1
+          trap 'rc=$?; echo "Stage assemble-stage exit code: $rc"; exit "$rc"' EXIT
           cd "$RUNNER_TEMP/kinera-src"
           unset KINERA_KEYSTORE KINERA_STORE_PASSWORD KINERA_KEY_PASSWORD KINERA_KEY_ALIAS
           bash tests/gradle_ci.sh "$GITHUB_WORKSPACE/diagnostics/assemble.log" :app:assembleRelease
           test -s app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Upload unsigned compilation artifact (diagnostic only, not installable)
+        id: unsigned_upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kinera-v0.9.3-unsigned-diagnostic
+          path: ${{ runner.temp }}/kinera-src/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
       - name: Sign and verify universal APK with permanent certificate
         id: apk
         shell: bash
@@ -123,6 +138,9 @@ jobs:
           SIGNING_BUNDLE: ${{ secrets.KINERA_SIGNING_BUNDLE }}
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/sign-stage.log") 2>&1
+          trap 'rc=$?; echo "Stage sign-stage exit code: $rc"; exit "$rc"' EXIT
           cd "$RUNNER_TEMP/kinera-src"
           if [[ -z "$SIGNING_BUNDLE" ]]; then
             echo '::error::Missing KINERA_SIGNING_BUNDLE repository secret. Configure the permanent signing key before building.'
@@ -136,7 +154,7 @@ jobs:
           export KINERA_KEY_PASSWORD="$KINERA_STORE_PASSWORD"
           export KINERA_KEYSTORE="$RUNNER_TEMP/kinera-release.p12"
           umask 077
-          trap 'rm -f "$KINERA_KEYSTORE" "$RUNNER_TEMP/kinera-aligned.apk"' EXIT
+          trap 'rc=$?; rm -f "$KINERA_KEYSTORE" "$RUNNER_TEMP/kinera-aligned.apk"; echo "Stage signing exit code: $rc"; exit "$rc"' EXIT
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KINERA_KEYSTORE"
           unset SIGNING_BUNDLE KEYSTORE_BASE64
           keytool -list -keystore "$KINERA_KEYSTORE" -storetype PKCS12 -storepass:env KINERA_STORE_PASSWORD -alias kinera >/dev/null
@@ -145,7 +163,7 @@ jobs:
           "$TOOLS/zipalign" -f -P 16 4 "$UNSIGNED" "$RUNNER_TEMP/kinera-aligned.apk"
           APK="$RUNNER_TEMP/kinera-signed.apk"
           "$TOOLS/apksigner" sign --ks "$KINERA_KEYSTORE" --ks-type PKCS12 --ks-key-alias kinera --ks-pass env:KINERA_STORE_PASSWORD --key-pass env:KINERA_KEY_PASSWORD --out "$APK" "$RUNNER_TEMP/kinera-aligned.apk"
-          NAME=Kinera_Edit_v0.9.1_Stable_release.apk
+          NAME=Kinera_Edit_v0.9.3_Stable_release.apk
           EXPECTED_CERT=47dc21b24c06909c980423fddc2f796269ecf43890de113e0753a6a3eae53e26
           CERT_OUTPUT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERT_OUTPUT"
@@ -156,7 +174,7 @@ jobs:
           fi
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
           printf '%s\n' "$BADGING" | sed -n '1,8p'
-          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='127' versionName='0.9.1 Stable'" > /dev/null
+          printf '%s\n' "$BADGING" | grep -F "package: name='meteapps.kineraedit' versionCode='129' versionName='0.9.3 Stable'" > /dev/null
           printf '%s\n' "$BADGING" | grep -qxF "sdkVersion:'31'"
           if printf '%s\n' "$BADGING" | grep -q '^application-debuggable'; then
             echo '::error::Release APK must not be debuggable.'
@@ -173,9 +191,9 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Kinera-Edit-v0.9.1-Stable-APK
+          name: Kinera-Edit-v0.9.3-Stable-APK
           path: |
-            dist/Kinera_Edit_v0.9.1_Stable_release.apk
+            dist/Kinera_Edit_v0.9.3_Stable_release.apk
             dist/APK_SIZE_REPORT.json
             dist/SHA256SUMS.txt
           if-no-files-found: error
@@ -186,43 +204,6 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP/kinera-src"
           bash tests/gradle_ci.sh "$GITHUB_WORKSPACE/diagnostics/lint.log" :app:lintRelease
-      - name: Summarize exact Gradle failure
-        if: ${{ failure() && !cancelled() }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p diagnostics
-          python3 - <<'PYCODE'
-          import pathlib,re,os
-          root=pathlib.Path('diagnostics')
-          lines=[]
-          for p in sorted(root.glob('*.log')):
-              data=p.read_text(errors='replace').splitlines()
-              hits=[x for x in data if re.search(r'(^.*\.java:\d+: error:|^e: |Execution failed for task|A failure occurred while executing|Could not resolve|Duplicate class|Android resource linking failed|^> .*FAILED|^FAILURE:|^\* What went wrong:)',x)]
-              compiler_context=[]
-              for i,line in enumerate(data):
-                  if re.search(r'\.java:\d+: error:',line):
-                      compiler_context.extend(data[i:i+6])
-              if compiler_context:
-                  hits=list(dict.fromkeys(compiler_context+hits))
-              transport=[x for x in data if re.search(r'Could not (GET|HEAD|download)|HTTP [0-9]{3}|status code|UnknownHostException|timed out|PKIX|SSLHandshake|Connection reset|Connection refused|curl:|Both official Maven|repository.*disabled|Caused by:',x,re.I)]
-              if hits or transport:
-                  lines += [f'[{p.name}]',*list(dict.fromkeys(transport))[:80],*list(dict.fromkeys(hits))[:80]]
-          report='\n'.join(lines) or 'No matching Gradle error line. Inspect the failed step and full diagnostics logs.'
-          (root/'FIRST_ERROR.txt').write_text(report+'\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
-              f.write('### Kinera build failure\n```text\n'+report[:14000]+'\n```\n')
-          print(report)
-          PYCODE
-      - name: Upload diagnostics when available
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kinera-v0.9.1-build-diagnostics
-          path: |
-            diagnostics/
-            ${{ runner.temp }}/kinera-src/app/build/reports/lint-results-*
-          if-no-files-found: ignore
       - name: Publish direct APK download as prerelease
         id: publish
         env:
@@ -231,14 +212,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.9.1-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          gh release create "$TAG" dist/Kinera_Edit_v0.9.1_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.9.1 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
+          mkdir -p "$GITHUB_WORKSPACE/diagnostics"
+          exec > >(tee -a "$GITHUB_WORKSPACE/diagnostics/publish.log") 2>&1
+          trap 'rc=$?; echo "Stage publish exit code: $rc"; exit "$rc"' EXIT
+          TAG="v0.9.3-Stable-build-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$TAG" dist/Kinera_Edit_v0.9.3_Stable_release.apk dist/APK_SIZE_REPORT.json dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Kinera Edit v0.9.3 Stable ($BUILD_KIND)" --notes "Compiled and signature-verified by CI. Not yet validated on physical Android devices. One universal APK. Permanent signer verified. Keep signing secret backed up."
           ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for asset in Kinera_Edit_v0.9.1_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
+          for asset in Kinera_Edit_v0.9.3_Stable_release.apk SHA256SUMS.txt APK_SIZE_REPORT.json; do
             printf '%s\n' "$ASSETS" | grep -qxF "$asset" || { echo "::error::Missing release asset: $asset"; exit 1; }
           done
       - name: Verify build and delivery completed
-        if: always()
+        id: delivery
+        if: ${{ success() }}
         shell: bash
         env:
           COMPILE_RESULT: ${{ steps.apk.outcome }}
@@ -251,7 +236,42 @@ jobs:
           test "$UPLOAD_RESULT" = success
           test "$LINT_RESULT" = success
           test "$PUBLISH_RESULT" = success
-          test -s dist/Kinera_Edit_v0.9.1_Stable_release.apk
+          test -s dist/Kinera_Edit_v0.9.3_Stable_release.apk
           test -s dist/APK_SIZE_REPORT.json
           (cd dist && sha256sum -c SHA256SUMS.txt)
-# KINERA_WORKFLOW_COMPLETE_V091_STABLE
+      - name: Report every stage and preserve diagnostic tail
+        id: diagnostic_summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          KINERA_STEP_OUTCOMES: '{"checkout":"${{ steps.checkout.outcome }}","init":"${{ steps.init.outcome }}","workflow_check":"${{ steps.workflow_check.outcome }}","java_setup":"${{ steps.java_setup.outcome }}","sdk":"${{ steps.sdk.outcome }}","gradle_setup":"${{ steps.gradle_setup.outcome }}","archive":"${{ steps.archive.outcome }}","hosttests":"${{ steps.hosttests.outcome }}","maven":"${{ steps.maven.outcome }}","assemble":"${{ steps.assemble.outcome }}","unsigned_upload":"${{ steps.unsigned_upload.outcome }}","apk":"${{ steps.apk.outcome }}","upload":"${{ steps.upload.outcome }}","lint":"${{ steps.lint.outcome }}","publish":"${{ steps.publish.outcome }}","delivery":"${{ steps.delivery.outcome }}"}'
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          python3 - <<'PYCODE'
+          import json,os,pathlib,re,sys
+          root=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else 'diagnostics');root.mkdir(parents=True,exist_ok=True)
+          try: outcomes=json.loads(os.environ.get('KINERA_STEP_OUTCOMES','{}'))
+          except json.JSONDecodeError: outcomes={}
+          lines=['KINERA CI stage outcomes:']+[f'{k}: {v}' for k,v in outcomes.items()]
+          failed=[k for k,v in outcomes.items() if v in ('failure','cancelled')]
+          lines+=['Failed stage(s): '+(', '.join(failed) or 'No failing step reported; inspect workflow initialization or post-job cleanup.')]
+          pattern=re.compile(r'error:|error |exception|failed|failure|could not|missing|mismatch|not found|denied|timed out|HTTP [45]\d\d',re.I)
+          for p in sorted(root.glob('*.log')):
+           data=p.read_text(errors='replace').splitlines();hits=[x for x in data if pattern.search(x)]
+           lines += [f'\n[{p.name}] matching lines:',*hits[-35:], 'Last log lines:',*data[-35:]]
+          report='\n'.join(lines)+'\n';(root/'FIRST_ERROR.txt').write_text(report)
+          print(report[-18000:]);summary=os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary:
+           with open(summary,'a') as f:f.write('### Kinera CI diagnostics\n```text\n'+report[-18000:]+'\n```\n')
+          PYCODE
+      - name: Upload diagnostic logs and stage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kinera-v0.9.3-build-diagnostics
+          path: |
+            diagnostics/
+            ${{ runner.temp }}/kinera-src/app/build/reports/lint-results-*
+          if-no-files-found: warn
+# KINERA_WORKFLOW_COMPLETE_V093_STABLE
